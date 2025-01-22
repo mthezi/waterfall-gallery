@@ -9,15 +9,77 @@ interface MediaItemType {
   title: string
   desc: string
   url: string
+  tag?: string  // Optional tag to display
 }
 
-const MediaItem = ({ item, className, onClick }: { item: MediaItemType; className?: string; onClick?: (e: React.MouseEvent<HTMLImageElement>) => void }) => {
+const MediaItem = ({ 
+  item, 
+  className, 
+  onClick,
+  onDelete,
+  onDownload,
+  showActions = true,
+  showTag = true
+}: { 
+  item: MediaItemType
+  className?: string
+  onClick?: (e: React.MouseEvent<HTMLImageElement>) => void
+  onDelete?: (item: MediaItemType) => void
+  onDownload?: (item: MediaItemType) => void
+  showActions?: boolean
+  showTag?: boolean
+}) => {
   const [isLoading, setIsLoading] = useState(true)
+
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    onDelete?.(item)
+  }
+
+  const handleDownload = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    onDownload?.(item)
+  }
+
+  const handleDragStart = (e: React.DragEvent) => {
+    e.preventDefault()
+  }
 
   return (
     <div className={`relative ${className}`}>
       {isLoading && (
         <div className="absolute inset-0 bg-gray-200 dark:bg-gray-800 animate-pulse rounded-xl" />
+      )}
+      {showTag && item.tag && (
+        <div className="absolute top-3 left-3 z-10">
+          <div className="inline-flex items-center px-2.5 py-1 rounded-lg bg-black/50 backdrop-blur-md shadow-[0_2px_8px_rgba(0,0,0,0.3)] ring-1 ring-black/10">
+            <span className="text-xs font-medium text-white drop-shadow-sm tracking-wide">{item.tag}</span>
+          </div>
+        </div>
+      )}
+      {showActions && (
+        <div className="absolute bottom-3 right-3 z-[60] flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+          <button
+            onClick={handleDownload}
+            className="p-1.5 bg-black/50 backdrop-blur-sm rounded-full hover:bg-black/70 transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+          </button>
+          <button
+            onClick={handleDelete}
+            className="p-1.5 bg-black/50 backdrop-blur-sm rounded-full hover:bg-black/70 transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 6h18"/>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
+              <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+            </svg>
+          </button>
+        </div>
       )}
       <img
         src={item.url || "/placeholder.svg"}
@@ -28,6 +90,8 @@ const MediaItem = ({ item, className, onClick }: { item: MediaItemType; classNam
         decoding="async"
         fetchPriority="high"
         onLoad={() => setIsLoading(false)}
+        draggable="false"
+        onDragStart={handleDragStart}
       />
     </div>
   )
@@ -39,13 +103,63 @@ interface GalleryModalProps {
   onClose: () => void
   setSelectedItem: (item: MediaItemType | null) => void
   mediaItems: MediaItemType[]
+  onDelete?: (item: MediaItemType) => void
+  onDownload?: (item: MediaItemType) => void
 }
 
-const GalleryModal = ({ selectedItem, isOpen, onClose, setSelectedItem, mediaItems }: GalleryModalProps) => {
+const GalleryModal = ({ 
+  selectedItem, 
+  isOpen, 
+  onClose, 
+  setSelectedItem, 
+  mediaItems,
+  onDelete,
+  onDownload 
+}: GalleryModalProps) => {
   const [dockPosition, setDockPosition] = useState({ x: 0, y: 0 })
+  const [scale, setScale] = useState(1)
+  const [dragPosition, setDragPosition] = useState({ x: 0, y: 0 })
   const VISIBLE_COUNT = 5
   const MIDDLE_INDEX = Math.floor(VISIBLE_COUNT / 2)
+  const imageRef = useRef<HTMLDivElement>(null)
 
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    onDelete?.(selectedItem)
+  }
+
+  const handleDownload = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    onDownload?.(selectedItem)
+  }
+
+  // Reset scale and position when image changes
+  useEffect(() => {
+    setScale(1)
+    setDragPosition({ x: 0, y: 0 })
+  }, [selectedItem.id])
+
+  useEffect(() => {
+    const element = imageRef.current;
+    if (!element) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const newScale = scale + (e.deltaY > 0 ? -0.1 : 0.1);
+      setScale(Math.min(Math.max(0.5, newScale), 3));
+    };
+
+    element.addEventListener('wheel', handleWheel, { passive: false });
+
+    return () => {
+      element.removeEventListener('wheel', handleWheel);
+    };
+  }, [scale]);
+
+  const handleDoubleClick = () => {
+    setScale(1)
+    setDragPosition({ x: 0, y: 0 })
+  }
 
   // 计算可见范围，使选中项尽可能在中间
   const calculateVisibleRange = (selectedIndex: number) => {
@@ -97,7 +211,7 @@ const GalleryModal = ({ selectedItem, isOpen, onClose, setSelectedItem, mediaIte
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         transition={{ duration: 0.2, ease: "easeOut" }}
-        className="fixed inset-0 w-full h-full z-50 flex items-center justify-center px-4 py-8"
+        className="fixed inset-0 w-full h-full z-[100] flex items-center justify-center px-4 py-8"
       >
         <motion.div 
           className="absolute inset-0 bg-black/30"
@@ -111,7 +225,10 @@ const GalleryModal = ({ selectedItem, isOpen, onClose, setSelectedItem, mediaIte
             ease: "easeOut"
           }}
           onClick={(e: React.MouseEvent<HTMLDivElement>) => onClose()}
-          style={{ backdropFilter: "blur(8px)" }}
+          style={{ 
+            backdropFilter: "blur(8px)",
+            pointerEvents: "auto"
+          }}
         />
         <motion.div
           initial={{ scale: 0.95, opacity: 0 }}
@@ -122,16 +239,128 @@ const GalleryModal = ({ selectedItem, isOpen, onClose, setSelectedItem, mediaIte
             ease: "easeOut",
             scale: { type: "spring", damping: 25, stiffness: 300 }
           }}
-          className="relative w-full max-w-4xl bg-white/10 backdrop-blur-xl rounded-2xl overflow-hidden shadow-2xl"
+          className="relative w-full max-w-4xl bg-white/10 backdrop-blur-xl rounded-2xl overflow-hidden shadow-2xl group"
         >
+          {/* Tag */}
+          {selectedItem.tag && (
+            <div className="absolute top-4 left-4 z-[60]">
+              <div className="inline-flex items-center px-2.5 py-1 rounded-lg bg-black/50 backdrop-blur-md shadow-[0_2px_8px_rgba(0,0,0,0.3)] ring-1 ring-black/10">
+                <span className="text-xs font-medium text-white drop-shadow-sm tracking-wide">{selectedItem.tag}</span>
+              </div>
+            </div>
+          )}
+
+          {/* Actions */}
+          <div className="absolute bottom-4 right-4 z-[60] flex gap-2">
+            <button
+              onClick={handleDownload}
+              className="p-1.5 bg-black/50 backdrop-blur-sm rounded-full hover:bg-black/70 transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/>
+                <line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+            </button>
+            <button
+              onClick={handleDelete}
+              className="p-1.5 bg-black/50 backdrop-blur-sm rounded-full hover:bg-black/70 transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 6h18"/>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>
+                <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+              </svg>
+            </button>
+          </div>
+
+          {/* Zoom Controls */}
+          <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-2 bg-black/50 backdrop-blur-sm rounded-full p-1.5">
+            <button
+              onClick={() => setScale(Math.max(0.5, scale - 0.1))}
+              className="p-1.5 rounded-full hover:bg-white/10 transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+            </button>
+            <div className="px-2 text-white text-sm font-medium select-none">
+              {Math.round(scale * 100)}%
+            </div>
+            <button
+              onClick={() => setScale(Math.min(3, scale + 0.1))}
+              className="p-1.5 rounded-full hover:bg-white/10 transition-colors"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19"></line>
+                <line x1="5" y1="12" x2="19" y2="12"></line>
+              </svg>
+            </button>
+            <button
+              onClick={() => {
+                setScale(1)
+                setDragPosition({ x: 0, y: 0 })
+              }}
+              className="p-1.5 rounded-full hover:bg-white/10 transition-colors"
+              title="Reset Zoom"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path>
+                <path d="M21 3v5h-5"></path>
+                <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path>
+                <path d="M8 16H3v5"></path>
+              </svg>
+            </button>
+          </div>
+
           <div className="relative">
-            <div className="relative flex items-center justify-center">
-              <img
-                src={selectedItem.url}
-                alt={selectedItem.title}
-                className="max-w-full max-h-[70vh] w-auto h-auto object-contain"
-                onClick={(e) => e.stopPropagation()}
-              />
+            <div className="relative flex items-center justify-center group min-h-[50vh]">
+              <motion.div
+                className="relative cursor-move select-none"
+                drag
+                dragConstraints={{
+                  left: -1000,
+                  right: 1000,
+                  top: -1000,
+                  bottom: 1000
+                }}
+                dragElastic={0.1}
+                dragMomentum={false}
+                animate={{
+                  scale: scale,
+                  x: dragPosition.x,
+                  y: dragPosition.y
+                }}
+                onDragEnd={(_, info) => {
+                  setDragPosition({
+                    x: dragPosition.x + info.offset.x,
+                    y: dragPosition.y + info.offset.y
+                  })
+                }}
+                style={{
+                  touchAction: "none",
+                  WebkitUserSelect: "none",
+                  userSelect: "none"
+                }}
+                onDoubleClick={handleDoubleClick}
+              >
+                <div 
+                  ref={imageRef}
+                  style={{ touchAction: "none" }}
+                >
+                  <img
+                    src={selectedItem.url || "/placeholder.svg"}
+                    alt={selectedItem.title}
+                    className="max-w-full max-h-[70vh] w-auto h-auto object-contain"
+                    onClick={(e) => e.stopPropagation()}
+                    loading="lazy"
+                    decoding="async"
+                    fetchPriority="high"
+                    draggable="false"
+                    onDragStart={(e) => e.preventDefault()}
+                  />
+                </div>
+              </motion.div>
             </div>
           </div>
           <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/80 to-transparent">
@@ -158,7 +387,7 @@ const GalleryModal = ({ selectedItem, isOpen, onClose, setSelectedItem, mediaIte
           bottom: "1rem",
           x: dockPosition.x,
           y: dockPosition.y,
-          zIndex: 50,
+          zIndex: 110,
           touchAction: "none"
         }}
         onDragEnd={(_, info) => {
@@ -198,7 +427,13 @@ const GalleryModal = ({ selectedItem, isOpen, onClose, setSelectedItem, mediaIte
                 }}
                 whileHover={{ scale: 1.1 }}
               >
-                <MediaItem item={item} className="w-full h-full object-cover" onClick={() => setSelectedItem(item)} />
+                <img
+                  src={item.url || "/placeholder.svg"}
+                  alt={item.title}
+                  className="w-full h-full object-cover"
+                  draggable="false"
+                  onDragStart={(e) => e.preventDefault()}
+                />
                 <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
               </motion.div>
             ))}
@@ -224,9 +459,20 @@ interface WaterfallGalleryProps {
   title: string
   description: string
   insertAtStart?: boolean
+  emptyStateMessage?: string
+  onDelete?: (item: MediaItemType) => void
+  onDownload?: (item: MediaItemType) => void
 }
 
-const WaterfallGallery: React.FC<WaterfallGalleryProps> = ({ mediaItems, title, description, insertAtStart = false }) => {
+const WaterfallGallery: React.FC<WaterfallGalleryProps> = ({ 
+  mediaItems, 
+  title, 
+  description, 
+  insertAtStart = false,
+  emptyStateMessage = "No images to display",
+  onDelete,
+  onDownload
+}) => {
   const [selectedItem, setSelectedItem] = useState<MediaItemType | null>(null)
   const [columns, setColumns] = useState<MediaItemType[][]>([])
   const containerRef = useRef<HTMLDivElement>(null)
@@ -334,44 +580,76 @@ const WaterfallGallery: React.FC<WaterfallGalleryProps> = ({ mediaItems, title, 
           onClose={() => setSelectedItem(null)}
           setSelectedItem={setSelectedItem}
           mediaItems={mediaItems}
+          onDelete={onDelete}
+          onDownload={onDownload}
         />
       )}
       <div className="flex flex-wrap gap-4">
-        {columns.map((column, columnIndex) => (
-          <div key={columnIndex} className="flex flex-col gap-4 flex-1 min-w-[250px]">
-            {column.map((item, itemIndex) => (
-              <motion.div
-                key={item.id}
-                layoutId={`media-${item.id}`}
-                className="mb-4 relative overflow-hidden rounded-xl cursor-pointer group"
-                onClick={() => setSelectedItem(item)}
-                initial={{ opacity: 0, y: 50 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{
-                  type: "spring",
-                  stiffness: 300,
-                  damping: 25,
-                  delay: itemIndex * 0.05,
-                }}
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.98 }}
+        {mediaItems.length === 0 ? (
+          <div className="w-full flex items-center justify-center py-16">
+            <div className="text-center">
+              <svg 
+                xmlns="http://www.w3.org/2000/svg" 
+                className="mx-auto h-12 w-12 text-gray-400"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
               >
-                <MediaItem item={item} className="w-full h-auto" onClick={() => setSelectedItem(item)} />
-                <motion.div
-                  className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                  initial={false}
-                  animate={{ opacity: 0 }}
-                  whileHover={{ opacity: 1 }}
-                >
-                  <div className="absolute bottom-0 left-0 right-0 p-4">
-                    <h3 className="text-white text-lg font-semibold line-clamp-1">{item.title}</h3>
-                    <p className="text-white/80 text-sm mt-1 line-clamp-2">{item.desc}</p>
-                  </div>
-                </motion.div>
-              </motion.div>
-            ))}
+                <path 
+                  strokeLinecap="round" 
+                  strokeLinejoin="round" 
+                  strokeWidth={2} 
+                  d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                />
+              </svg>
+              <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-gray-100">{emptyStateMessage}</h3>
+            </div>
           </div>
-        ))}
+        ) : (
+          columns.map((column, columnIndex) => (
+            <div key={columnIndex} className="flex flex-col gap-4 flex-1 min-w-[250px]">
+              {column.map((item, itemIndex) => (
+                <motion.div
+                  key={item.id}
+                  layoutId={`media-${item.id}`}
+                  className="mb-4 relative overflow-hidden rounded-xl cursor-pointer group"
+                  onClick={() => setSelectedItem(item)}
+                  initial={{ opacity: 0, y: 50 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{
+                    type: "spring",
+                    stiffness: 300,
+                    damping: 25,
+                    delay: itemIndex * 0.05,
+                  }}
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <MediaItem 
+                    item={item} 
+                    className="w-full h-auto" 
+                    onClick={() => setSelectedItem(item)}
+                    onDelete={onDelete}
+                    onDownload={onDownload}
+                    showActions={true}
+                    showTag={true}
+                  />
+                  <motion.div
+                    className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                    initial={false}
+                    animate={{ opacity: 0 }}
+                    whileHover={{ opacity: 1 }}
+                  >
+                    <div className="absolute bottom-0 left-0 right-0 p-4">
+                      <h3 className="text-white text-lg font-semibold line-clamp-1">{item.title}</h3>
+                      <p className="text-white/80 text-sm mt-1 line-clamp-2">{item.desc}</p>
+                    </div>
+                  </motion.div>
+                </motion.div>
+              ))}
+            </div>
+          ))
+        )}
       </div>
     </div>
   )
