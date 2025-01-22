@@ -1,4 +1,4 @@
-import WaterfallGallery from "@/components/blocks/interactive-bento-gallery";
+import WaterfallGallery from "@/components/gallery/WaterfallGallery";
 import { useState } from "react";
 
 const initialMediaItems = [
